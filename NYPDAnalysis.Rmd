@@ -1,32 +1,260 @@
 ---
-title: "NYPD Data Analysis"
-author: "SoyoungPark"
-date: '2021 5 27 '
+title: "NYPD Shooting incident data analysis"
+date: '5/21/2021'
 output:
   pdf_document: default
   html_document: default
 ---
+****
+# Introduction
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+### purpose
+
+In this article, I will **clean**, **visualize** and **analyze** [NYPD Shooting incident data](https://catalog.data.gov/dataset/nypd-shooting-incident-data-historic) to make it easier to see the trend of cumulative shooting incidents and murder cases per boroughs.  
+
+### contents
+
+1. Data Cleaning 
+    i. Extract only the data needed for analysis
+    ii. Date format conversion
+    iii. Replace logical boolean data with integer type
+    iv. Add the number of shooting occurrences and the cumulative number of it as columns.
+    v. Add the cumulative number of murders as a column.
+    
+2. Visualization 
+    a. Cumulative number of shooting events according to the flow of the date by borough
+    b. Cumulative number of murder according to the flow of the date by borough  
+    c. Percentage of murders in total number of shootings by borough
+    
+3. Analysis
+    - Compare the total number of shooting cases and murder ones *by borough*. 
+    - Calculate the percentage of murders in shootings *by borough*
+      + `BROOKLYN`
+      + `BRONX`
+      + `QUEENS`
+      + `MANHATTAN`
+      + `STATEN ISLAND`
+      
+4. Model 
+    - Compare the actual trend of shooting incidents with the predictive linear model
+    
+    
+5. Conclusion and Bias Identification   
+    - Conclude the project report 
+    - Identify personal bias and mitigation method
+    
+    
+<br /> 
+<br /> 
+    
+    
+    
+    
+
+### 1.Data Cleaning
+
+Data used in this project is every shooting incident data list occurred in NYC from Jan. 1, 2006 to Dec. 31, 2020. 
+
+
+
+```{r pressure, echo=FALSE, fig.height=5, fig.width=5}
+# plot(pressure)
 ```
 
-## R Markdown
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
 
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+**Data Importing**
+<br />
+Here you can see the original dataset below. 
 
-```{r cars}
-summary(cars)
+```{r}
+library(knitr)
+library(tidyr)
+library(tidyverse)
+library(lubridate)
+
+nypd <- read_csv("https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD")
+knitr::kable(head(nypd))
 ```
 
-## Including Plots
+**Data cleaning**
+<br />
+Date format was converted for easier reading and I replaced logical boolean data, 'STATISTICAL_MURDER_FLAG' with integer type like '0' for FALSE and '1' for TRUE. And I added the number of shooting occurrences and the cumulative number of it as columns with the names of 'shooting' and 'cumshooting'. Also a column, 'cummurder', was added for the cumulative number of murders. 
+```{r}
+library(dplyr)
+library(ggplot2)
 
-You can also embed plots, for example:
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+# select only needed data
+nypd_test <- drop_na(nypd) %>%
+  select(-c(INCIDENT_KEY, LOCATION_DESC, X_COORD_CD, Y_COORD_CD, Latitude, Longitude, Lon_Lat, JURISDICTION_CODE, OCCUR_TIME))
+
+# change the date type 
+nypd_test <- nypd_test %>%
+mutate(OCCUR_DATE = mdy(OCCUR_DATE))
+
+#change logical boolean into int.
+nypd_test$STATISTICAL_MURDER_FLAG [nypd_test$STATISTICAL_MURDER_FLAG == "TRUE"] <- 1
+nypd_test$STATISTICAL_MURDER_FLAG [nypd_test$STATISTICAL_MURDER_FLAG == "FALSE"] <- 0
+
+
+
+nypd_murder_boro <- nypd_test %>%
+     group_by(BORO) %>%
+#     summarize(STATISTICAL_MURDER_FLAG = sum(STATISTICAL_MURDER_FLAG)) %>%
+     select(BORO, OCCUR_DATE, STATISTICAL_MURDER_FLAG) %>%
+     ungroup()
+
+nypd_murder_boro_1 <- nypd_murder_boro %>%
+     group_by(BORO, OCCUR_DATE) %>%
+     summarize(STATISTICAL_MURDER_FLAG = STATISTICAL_MURDER_FLAG) %>%
+     select(BORO, OCCUR_DATE, STATISTICAL_MURDER_FLAG) %>%
+     ungroup()
+
+# add new columns
+nypd_murder_boro_1$cummurder <- ave(nypd_murder_boro_1$STATISTICAL_MURDER_FLAG, nypd_murder_boro_1$BORO, FUN = cumsum)
+
+nypd_murder_boro_1['shooting'] = 1
+
+nypd_murder_boro_1$cumshooting <- ave(nypd_murder_boro_1$shooting, nypd_murder_boro_1$BORO, FUN = cumsum)
+
+nypd_murder_boro_1$murderpercent <- with(nypd_murder_boro_1, cummurder/cumshooting *100)
+# show the data that will be used for analysis
+knitr::kable(head(nypd_murder_boro_1))
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+<br />
+<br />
+
+### 2. Visualization 
+Here comes three graphs. The first two shows the cumulative number of murder and of shooting events according to the flow of the date by borough. And the rest shows the percentage of murders in total number of shootings by borough. 
+```{r}
+#Visualization
+
+nypd_murder_boro_1 %>%
+  ggplot(aes(x = OCCUR_DATE, y=cummurder, group=BORO, color=BORO))+
+  geom_line()
+
+
+nypd_murder_boro_1 %>%
+  ggplot(aes(x = OCCUR_DATE, y=cumshooting, group=BORO, color=BORO))+
+  geom_line()
+
+
+nypd_murder_boro_1 %>%
+  ggplot(aes(x = OCCUR_DATE, y=murderpercent, group=BORO, color=BORO))+
+  geom_line()
+
+```
+
+
+<br />
+<br />
+
+### 3. Analysis
+Comparing the total number of shooting cases and murder ones by borough I calculated the percentage of murders in shootings and found that in STATEN ISLAND the total number of shootings is the lowest, but the proportion of deaths from shootings is the highest. 
+
+
+```{r}
+# analysis
+
+aggregate(nypd_murder_boro_1$STATISTICAL_MURDER_FLAG, by=list(BORO = nypd_murder_boro_1$BORO), FUN=sum)
+aggregate(nypd_murder_boro_1$shooting, by=list(BORO = nypd_murder_boro_1$BORO), FUN=sum)
+
+city <- "BRONX"
+nypd_murder_boro_BRONX <- nypd_murder_boro_1 %>%
+     filter(BORO == city) %>%
+     group_by(BORO, OCCUR_DATE) %>%
+     #summarize(STATISTICAL_MURDER_FLAG = STATISTICAL_MURDER_FLAG) %>%
+     select(BORO, OCCUR_DATE, shooting, cumshooting, STATISTICAL_MURDER_FLAG, cummurder, murderpercent) %>%
+     ungroup()
+knitr::kable(tail(nypd_murder_boro_BRONX))
+
+city <- "BROOKLYN"
+nypd_murder_boro_BROOKLYN <- nypd_murder_boro_1 %>%
+     filter(BORO == city) %>%
+     group_by(BORO, OCCUR_DATE) %>%
+     #summarize(STATISTICAL_MURDER_FLAG = STATISTICAL_MURDER_FLAG) %>%
+     select(BORO, OCCUR_DATE, shooting, cumshooting, STATISTICAL_MURDER_FLAG, cummurder, murderpercent) %>%
+     ungroup()
+knitr::kable(tail(nypd_murder_boro_BROOKLYN))
+
+
+city <- "STATEN ISLAND"
+nypd_murder_boro_STATENISLAND <- nypd_murder_boro_1 %>%
+     filter(BORO == city) %>%
+     group_by(BORO, OCCUR_DATE) %>%
+     #summarize(STATISTICAL_MURDER_FLAG = STATISTICAL_MURDER_FLAG) %>%
+     select(BORO, OCCUR_DATE, shooting, cumshooting, STATISTICAL_MURDER_FLAG, cummurder, murderpercent) %>%
+     ungroup()
+knitr::kable(tail(nypd_murder_boro_STATENISLAND))
+
+city <- "MANHATTAN"
+nypd_murder_boro_MANHATTAN <- nypd_murder_boro_1 %>%
+     filter(BORO == city) %>%
+     group_by(BORO, OCCUR_DATE) %>%
+     #summarize(STATISTICAL_MURDER_FLAG = STATISTICAL_MURDER_FLAG) %>%
+     select(BORO, OCCUR_DATE, shooting, cumshooting, STATISTICAL_MURDER_FLAG, cummurder, murderpercent) %>%
+     ungroup()
+knitr::kable(tail(nypd_murder_boro_MANHATTAN))
+
+city <- "QUEENS"
+nypd_murder_boro_QUEENS <- nypd_murder_boro_1 %>%
+     filter(BORO == city) %>%
+     group_by(BORO, OCCUR_DATE) %>%
+     #summarize(STATISTICAL_MURDER_FLAG = STATISTICAL_MURDER_FLAG) %>%
+     select(BORO, OCCUR_DATE, shooting, cumshooting, STATISTICAL_MURDER_FLAG, cummurder, murderpercent) %>%
+     ungroup()
+knitr::kable(tail(nypd_murder_boro_QUEENS))
+
+
+
+
+```
+
+
+<br />
+<br />
+
+### 4. Model 
+I made a linear model to predict the shooting incident of boroughs and compared it to the actual trend of shooting incidents. In graph below, the blue line represents the actual trend of shooting incidents and the red does the predictive model prediction. 
+```{r}
+
+
+# Modeling Data
+
+mod <- lm(cumshooting ~ cummurder, data = nypd_murder_boro_1)
+summary(mod)
+
+
+nypd_murder_boro_1 %>% slice_min(cumshooting)
+nypd_murder_boro_1 %>% slice_max(cumshooting)
+
+x_grid <- seq(0, 3000)
+new_df <- tibble(cumshooting = x_grid)
+
+nypd_pred <- nypd_murder_boro_1 %>% mutate(pred = predict(mod))
+
+# nypd_pred
+
+nypd_pred %>% ggplot() +
+  geom_point(aes(x = OCCUR_DATE, y=cumshooting), color= "blue")+
+  geom_point(aes(x = OCCUR_DATE, y = pred), color = "red")
+
+```
+
+
+<br />
+<br />
+
+### 5. Conclusion and Bias Identification
+
+
+The analysis shows that BROOKLYN is the place where the most shootings occurred in the data. However, STATEN ISLAND has the highest rate of deaths from shooting. If social policy is established based on this data, I think that prevention education for shootings should be approached in a different way in BROOKLYN and STATEN ISLAND.
+<br />
+Born in a country in which possession of firearms itself is illegal, I have great fear of shooting itself and distrust of the society in which it is carried out.
+So, rather than seeing and understanding the data of citizens who can legally own firearms as an important part of society and thinking about countermeasures, the fact that there are many gunshots is just bad.
+However, while doing science, it has changed that I try to accept the phenomenon itself and recognize the value of research.
+Not making judgments about certain facts but trying to accept and understand the phenomenon in a neutral way is a way for me to step into a bigger world, and for our society to make the rules fairer. 
+
